@@ -1,0 +1,146 @@
+---
+title: "Practical Machine Learning Prediction Assignment"
+author: "Willem Hogewoning"
+date: "25-3-2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+### Data 
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+### What you should submit
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+#### Peer Review Portion
+Your submission for the Peer Review portion should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-).
+
+#### Course Project Prediction Quiz Portion
+Apply your machine learning algorithm to the 20 test cases available in the test data above and submit your predictions in appropriate format to the Course Project Prediction Quiz for automated grading. 
+
+### Reproducibility 
+Due to security concerns with the exchange of R code, your code will not be run during the evaluation by your classmates. Please be sure that if they download the repo, they will be able to view the compiled HTML version of your analysis. 
+
+## Download and Import the data
+
+```{r warning=FALSE, message=FALSE}
+# Course Project
+library(tidyverse)
+library(AppliedPredictiveModeling)
+library(caret)
+set.seed(1000)
+
+#Download
+
+dir.create("./data_downloaded")
+
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(url_train, destfile = "./data_downloaded/training.csv")
+download.file(url_test, destfile = "./data_downloaded/test.csv")
+
+
+#Import
+trainset <- read.csv("./data_downloaded/training.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE)
+test <- read.csv("./data_downloaded/test.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE)
+```
+
+## First split the data into a training set and a test set
+```{r warning=FALSE, message=FALSE}
+inTrain = createDataPartition(trainset$classe, p = 3/4)[[1]]
+training = trainset[ inTrain,]
+testing = trainset[-inTrain,]
+```
+
+## Examine the training set and make some preperations and tidying the data for later use
+The dataset consists out of 160 variables but many are NA's or just empty values like "", also the first 7 columns have no prediction value besides the name, date and column index.
+
+-   Remove the first 7 columns.
+-   Remove the columns with mostly NA's
+-   Remove the empty columns with "" values
+-   Set the predition varialbe from character to Factor.
+
+```{r warning=FALSE, message=FALSE }
+#remove NA's colums
+training <- training[ , colSums(is.na(training)) < 1000]
+
+#remove empty columns
+a <- sapply(training, function(x) sum(x == "")) >1000
+training <- training[ , a == FALSE ]
+rm(a)
+dataset <- training
+dataset <- dataset[,8:length(dataset)]
+dataset$classe <- as.factor(dataset$classe)
+
+#also the testset must change the predictor value to Factor, identical as the trainingset.
+testset <- testing
+testset$classe <- as.factor(testset$classe)
+```
+## Correlation analysis
+
+Next we will make a correlation overview as plot of all the variables in use
+
+```{r warning=FALSE, message=FALSE}
+library(corrplot)
+
+corMatrix <- cor(dataset[, -53])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+
+```
+
+## Model
+After trying and comparing various models, the best approach is to use random forest.
+
+
+```{r warning=FALSE, message=FALSE}
+library(randomForest)
+set.seed(1000)
+modFit <- randomForest(classe~., data = dataset)
+print(modFit)
+
+predict1 <- predict(modFit, testset, type = "class")
+confusionMatrix(testset$classe, predict1)
+
+```
+
+We evaluate this model by the looking at the accuracy and the out of sample error rate
+
+```{r warning=FALSE, message=FALSE}
+#accuracy
+
+accuracy <- postResample(predict1, testset$classe)
+accuracy
+
+#Out of Sample Error rate
+
+outsampleerror <- 1 - as.numeric(confusionMatrix(testset$classe, predict1)$overall[1])
+outsampleerror
+```
+
+To visualize the prediction versus the model outcome, we will plot both with each other
+
+```{r warning=FALSE, message=FALSE}
+qplot(classe, predict1, data=testset,  colour= classe, geom = c("boxplot", "jitter"),
+      main = "predicted vs. observed in validation data", xlab = "Observed Classe", ylab = "Predicted Classe")
+```
+
+As can be seen here, there is quite a good match between prediction versus observed.
+
